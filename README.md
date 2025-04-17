@@ -1,6 +1,4 @@
-Here’s a fresh `README.md` for your **Boba Bowl!** game, written to highlight your unique design, mobile optimization, and fun mechanics in a way that’s friendly, informative, and easy to understand:
 
----
 
 # 🎳 Boba Bowl! 🍡
 
