@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Boba Bowl!</title>
+    <script src="https://cdn.jsdelivr.net/npm/js-confetti@latest/dist/js-confetti.browser.js"></script>
+    <style>
+        /* Basic Reset & Body Styling */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            /* Prevent text selection during drag */
+            user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            /* Prevent callout menu on iOS */
+            -webkit-touch-callout: none;
+        }
+
+        html, body {
+            height: 100%;
+            overflow: hidden; /* Prevent scrolling */
+            font-family: 'Arial Rounded MT Bold', 'Helvetica Rounded', Arial, sans-serif;
+            background-color: #333; /* Fallback background */
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            touch-action: none; /* Prevent default touch actions like scrolling/zooming */
+        }
+
+        /* Game Container - Fixed Aspect Ratio (adjust max-width as needed) */
+        .game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            /* Approx 9:16 ratio - common phone size */
+            max-width: 450px;
+            /* max-height: 800px; */ /* Optional: set max height too */
+            overflow: hidden;
+            background-color: #7ec0ee; /* Sky blue fallback */
+        }
+
+        /* Lane Background */
+        .lane {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: url('lane-1.png');
+            background-size: cover; /* Cover the container */
+            background-position: center bottom; /* Align bottom of lane */
+            z-index: 0;
+            /* Add subtle flash effect */
+            transition: box-shadow 0.1s ease-out;
+        }
+        .lane.strike-flash {
+            box-shadow: inset 0 0 100px 50px rgba(255, 255, 150, 0.8); /* Bright yellow flash */
+        }
+         .lane.spare-sparkle {
+             /* Placeholder for sparkle effect - could use pseudo-elements or canvas */
+             box-shadow: inset 0 0 80px 40px rgba(200, 200, 255, 0.7); /* Light purple sparkle */
+         }
+
+        /* Pins Container & Individual Pins */
+        .pins-container {
+            position: absolute;
+            top: 18%; /* Adjust vertical position of pin set */
+            left: 50%;
+            transform: translateX(-50%);
+            width: 40%; /* Adjust width of pin area */
+            height: 15%; /* Adjust height of pin area */
+            z-index: 5;
+            /* border: 1px solid red; */ /* For debugging layout */
+        }
+
+        .pin {
+            position: absolute;
+            width: 12%; /* Adjust pin size relative to container */
+            height: auto;
+            transition: transform 0.4s cubic-bezier(0.68, -0.55, 0.27, 1.55), opacity 0.4s ease-out; /* Bouncy fall */
+            transform-origin: bottom center;
+            opacity: 1;
+        }
+
+        .pin.fallen {
+            transform: rotate(80deg) translate(10px, -15px) scale(0.9); /* Adjust fall angle/position */
+            opacity: 0.6;
+        }
+
+        /* Pin positions (Approximate Triangle) - Adjust percentages as needed */
+        /* Back Row */
+        #pin-6 { top: 0%; left: 10%; }
+        #pin-7 { top: 0%; left: 30%; }
+        #pin-8 { top: 0%; left: 50%; }
+        #pin-9 { top: 0%; left: 70%; }
+        /* Third Row */
+        #pin-3 { top: 25%; left: 20%; }
+        #pin-4 { top: 25%; left: 40%; }
+        #pin-5 { top: 25%; left: 60%; }
+        /* Second Row */
+        #pin-1 { top: 50%; left: 30%; }
+        #pin-2 { top: 50%; left: 50%; }
+        /* Front Pin */
+        #pin-0 { top: 75%; left: 40%; }
+
+
+        /* Bowling Ball */
+        .ball {
+            position: absolute;
+            bottom: 8%; /* Starting position */
+            left: 50%; /* Centered */
+            transform: translateX(-50%);
+            width: 10%; /* Adjust size */
+            height: auto;
+            cursor: grab;
+            z-index: 10;
+            border-radius: 50%; /* Ensure it's round if image fails */
+            transition: transform 0.1s ease-out, box-shadow 0.2s ease; /* Smooth drag feedback */
+            touch-action: none; /* Prevent default touch actions on the ball */
+        }
+
+        .ball.dragging {
+            cursor: grabbing;
+            box-shadow: 0 0 20px 5px rgba(255, 215, 0, 0.8); /* Gold glow */
+            transform: translateX(-50%) scale(1.05); /* Slightly larger */
+        }
+
+        .ball.pulsing {
+            animation: pulse 1.5s infinite ease-in-out;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: translateX(-50%) scale(1); }
+            50% { transform: translateX(-50%) scale(1.05); }
+        }
+
+        /* Aiming Arrow (Simple div version) */
+        .aim-arrow {
+            position: absolute;
+            bottom: 15%; /* Start above ball */
+            left: 50%;
+            width: 4px; /* Arrow line thickness */
+            height: 50px; /* Initial length */
+            background-color: rgba(255, 255, 0, 0.7); /* Yellowish */
+            transform-origin: bottom center;
+            transform: translateX(-50%) rotate(0deg);
+            z-index: 9;
+            display: none; /* Hidden initially */
+            border-radius: 2px;
+            box-shadow: 0 0 5px black;
+        }
+         .aim-arrow::after { /* Arrowhead */
+             content: '';
+             position: absolute;
+             top: -8px; /* Position arrowhead above line */
+             left: 50%;
+             transform: translateX(-50%);
+             width: 0;
+             height: 0;
+             border-left: 8px solid transparent;
+             border-right: 8px solid transparent;
+             border-bottom: 12px solid rgba(255, 255, 0, 0.7); /* Match line color */
+         }
+
+
+        /* Panda Mascot */
+        .panda {
+            position: absolute;
+            bottom: 5%;
+            right: 5%; /* Middle right */
+            width: 18%; /* Adjust size */
+            height: auto;
+            z-index: 6;
+            transform-origin: bottom center;
+            transition: transform 0.3s ease-in-out;
+        }
+        .panda.cheer {
+            animation: pandaCheerAnim 0.8s ease-in-out;
+        }
+         @keyframes pandaCheerAnim {
+             0%, 100% { transform: scale(1) rotate(0deg); }
+             25% { transform: scale(1.1) rotate(-5deg); }
+             75% { transform: scale(1.1) rotate(5deg); }
+         }
+         .panda.idle-looking { /* Subtle animation looking towards pins */
+             animation: pandaLookAnim 4s infinite ease-in-out;
+         }
+         @keyframes pandaLookAnim {
+              0%, 40%, 100% { transform: rotateY(0deg); } /* Facing mostly forward */
+              60%, 90% { transform: rotateY(20deg); } /* Looking slightly left (towards pins) */
+         }
+
+
+        /* UI Elements */
+        .score-display {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            color: white;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 8px 15px;
+            border-radius: 8px;
+            z-index: 20;
+            font-size: 16px; /* Adjust */
+            min-width: 150px; /* Ensure enough space */
+            text-align: left;
+        }
+
+        .message-overlay {
+            position: absolute;
+            top: 40%; /* Adjust vertical position */
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #ffcc00; /* Bright Yellow */
+            font-size: 2.5em; /* Adjust size */
+            font-weight: bold;
+            text-align: center;
+            text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.8);
+            z-index: 30;
+            display: none; /* Hidden initially */
+            padding: 10px;
+            white-space: nowrap; /* Prevent wrapping */
+        }
+
+        .ui-button {
+            position: absolute;
+            z-index: 25;
+            padding: 10px 15px;
+            font-size: 16px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            border: 1px solid white;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+        .ui-button:hover {
+             background-color: rgba(255, 255, 255, 0.3);
+        }
+
+        #mute-button {
+            top: 15px;
+            right: 15px;
+        }
+
+        #restart-button {
+            bottom: 20%;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 15px 30px;
+            font-size: 20px;
+            background-color: #4CAF50; /* Green */
+            border: none;
+            display: none; /* Hidden initially */
+            animation: pulseButton 2s infinite ease-in-out;
+        }
+         @keyframes pulseButton {
+             0%, 100% { transform: translateX(-50%) scale(1); }
+             50% { transform: translateX(-50%) scale(1.05); }
+         }
+
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <div class="lane" id="lane"></div>
+
+        <div class="pins-container" id="pins-container">
+            <!-- Pins will be added here by JS, or you can list them -->
+             <img src="boba-pins.png" class="pin" id="pin-0" alt="Pin 1">
+             <img src="boba-pins.png" class="pin" id="pin-1" alt="Pin 2">
+             <img src="boba-pins.png" class="pin" id="pin-2" alt="Pin 3">
+             <img src="boba-pins.png" class="pin" id="pin-3" alt="Pin 4">
+             <img src="boba-pins.png" class="pin" id="pin-4" alt="Pin 5">
+             <img src="boba-pins.png" class="pin" id="pin-5" alt="Pin 6">
+             <img src="boba-pins.png" class="pin" id="pin-6" alt="Pin 7">
+             <img src="boba-pins.png" class="pin" id="pin-7" alt="Pin 8">
+             <img src="boba-pins.png" class="pin" id="pin-8" alt="Pin 9">
+             <img src="boba-pins.png" class="pin" id="pin-9" alt="Pin 10">
+        </div>
+
+        <img src="bowling_ball.png" class="ball" id="ball" alt="Bowling Ball">
+
+        <div class="aim-arrow" id="aim-arrow"></div>
+
+        <img src="cheer-panda.png" class="panda" id="panda" alt="Cheering Panda">
+
+        <div class="score-display" id="score-display">Frame: 1 / 10 | Throw: 1 | Score: 0</div>
+        <div class="message-overlay" id="message-overlay">Ready?</div>
+
+        <button class="ui-button" id="mute-button">Mute 🔊</button>
+        <button class="ui-button" id="restart-button">Play Again!</button>
+    </div>
+
+    <!-- Audio Elements -->
+    <audio id="bg-music" src="background-music.mp3" loop></audio>
+    <audio id="ball-roll-sound" src="ball-roll.mp3"></audio>
+    <audio id="pins-crash-sound" src="pins-crash.mp3"></audio>
+    <audio id="panda-cheer-sound" src="panda-cheer.mp3"></audio>
+    <!-- <audio id="drag-cue-sound" src="drag-cue.mp3"></audio> --> <!-- Optional: Cue on drag start/release -->
+    <audio id="strike-sound" src="panda-cheer.mp3"></audio> <!-- Use panda cheer for now -->
+    <audio id="spare-sound" src="panda-cheer.mp3"></audio> <!-- Use panda cheer for now -->
+
+
+    <script>
+        // --- DOM Elements ---
+        const gameContainer = document.querySelector('.game-container');
+        const lane = document.getElementById('lane');
+        const ball = document.getElementById('ball');
+        const pinsContainer = document.getElementById('pins-container');
+        const pins = Array.from(document.querySelectorAll('.pin'));
+        const panda = document.getElementById('panda');
+        const aimArrow = document.getElementById('aim-arrow');
+        const scoreDisplay = document.getElementById('score-display');
+        const messageOverlay = document.getElementById('message-overlay');
+        const muteButton = document.getElementById('mute-button');
+        const restartButton = document.getElementById('restart-button');
+
+        // Audio Elements
+        const bgMusic = document.getElementById('bg-music');
+        const ballRollSound = document.getElementById('ball-roll-sound');
+        const pinsCrashSound = document.getElementById('pins-crash-sound');
+        const pandaCheerSound = document.getElementById('panda-cheer-sound');
+        const strikeSound = document.getElementById('strike-sound');
+        const spareSound = document.getElementById('spare-sound');
+        // const dragCueSound = document.getElementById('drag-cue-sound'); // Optional
+
+        const jsConfetti = new JSConfetti();
+
+        // --- Game State Variables ---
+        let currentFrame = 1;
+        let currentThrow = 1;
+        let pinsStanding = Array(10).fill(true); // true if standing
+        let score = 0;
+        // Stores pins knocked per throw: frameScores[frameIndex][throwIndex]
+        let frameScores = Array(10).fill(null).map(() => [null, null]);
+        // Stores bonus type: 0=none, 1=spare, 2=strike
+        let frameBonus = Array(10).fill(0);
+        let totalScorePerFrame = Array(10).fill(null); // Holds calculated score up to that frame end
+
+        let isDragging = false;
+        let dragStartX = 0;
+        let dragStartY = 0;
+        let currentBallX = 0; // Current horizontal position on release line
+        let ballStartY = 0; // Initial Y position of the ball
+
+        let isMuted = false;
+        let gameOver = false;
+        let interactionAllowed = true; // Prevent interaction during roll/reset
+
+        // --- Constants ---
+        const MAX_FRAMES = 10;
+        const MAX_POWER = 150; // Max drag distance for power scaling
+        const LANE_WIDTH = gameContainer.clientWidth; // Get actual width
+        const BALL_START_BOTTOM_PERCENT = 8; // Matches CSS 'bottom'
+
+        // --- Initialization ---
+        function initGame() {
+            gameOver = false;
+            currentFrame = 1;
+            currentThrow = 1;
+            score = 0;
+            frameScores = Array(10).fill(null).map(() => [null, null]);
+            frameBonus = Array(10).fill(0);
+            totalScorePerFrame = Array(10).fill(null);
+
+            restartButton.style.display = 'none';
+            panda.classList.remove('cheer');
+            lane.classList.remove('strike-flash', 'spare-sparkle');
+
+            resetPinsVisualAndState();
+            resetBallPosition();
+            updateScoreDisplay();
+            showMessage("Ready?", 2000, true); // Show "Ready?" and make ball pulse
+
+            interactionAllowed = true;
+            panda.classList.add('idle-looking'); // Start idle animation
+
+            // Start background music if not muted and not already playing
+            if (!isMuted && bgMusic.paused) {
+                bgMusic.play().catch(e => console.error("Audio play failed:", e));
+            }
+
+             // Calculate initial ball position precisely
+             ballStartY = gameContainer.clientHeight * (1 - BALL_START_BOTTOM_PERCENT / 100);
+
+             // Preload sounds (optional, browsers might do this anyway)
+             ballRollSound.load();
+             pinsCrashSound.load();
+             pandaCheerSound.load();
+             strikeSound.load();
+             spareSound.load();
+        }
+
+        // --- Audio Control ---
+        function playSound(soundElement) {
+            if (!isMuted) {
+                soundElement.currentTime = 0; // Rewind
+                soundElement.play().catch(e => console.warn("Sound play interrupted:", e));
+            }
+        }
+
+        muteButton.addEventListener('click', () => {
+            isMuted = !isMuted;
+            muteButton.textContent = isMuted ? 'Unmute 🔇' : 'Mute 🔊';
+            if (isMuted) {
+                bgMusic.pause();
+            } else if (!gameOver) {
+                bgMusic.play().catch(e => console.error("Audio play failed:", e));
+            }
+            // Mute/unmute other sounds instantly if needed (usually stopping current play is enough)
+        });
+
+        // --- Ball Interaction ---
+        ball.addEventListener('pointerdown', (e) => {
+            if (gameOver || !interactionAllowed || isDragging) return;
+
+            // If it's the start of a frame/throw, remove pulsing
+            ball.classList.remove('pulsing');
+
+            isDragging = true;
+            ball.classList.add('dragging');
+            ball.setPointerCapture(e.pointerId); // Capture pointer events
+
+            dragStartX = e.clientX;
+            dragStartY = e.clientY;
+            // Record the ball's current horizontal center on pointer down
+            currentBallX = ball.offsetLeft + ball.offsetWidth / 2;
+
+            // Optional: Play drag cue sound
+            // playSound(dragCueSound);
+
+            aimArrow.style.display = 'block'; // Show arrow
+            updateAimArrow(0, 0); // Reset arrow initially
+        });
+
+        // Use document for move/up to catch events even if pointer leaves the ball
+        document.addEventListener('pointermove', (e) => {
+            if (!isDragging || !interactionAllowed) return;
+
+            const currentX = e.clientX;
+            const currentY = e.clientY;
+
+            let deltaX = currentX - dragStartX;
+            // Dragging *up* the screen should be positive deltaY for aiming/power
+            let deltaY = dragStartY - currentY;
+
+            // --- Update Ball Position (Subtle Horizontal Adjustment) ---
+            // Allow slight L/R movement while dragging
+            const maxHorizontalDrag = LANE_WIDTH * 0.15; // Limit horizontal adjustment
+            let adjustedDeltaX = Math.max(-maxHorizontalDrag, Math.min(maxHorizontalDrag, deltaX));
+            // Calculate new target center X, clamping within lane bounds (e.g., 10% margin)
+            const minX = LANE_WIDTH * 0.1;
+            const maxX = LANE_WIDTH * 0.9;
+            let targetBallCenterX = currentBallX + adjustedDeltaX;
+            targetBallCenterX = Math.max(minX, Math.min(maxX, targetBallCenterX));
+
+            // Update ball's visual position (translateX for centering)
+            ball.style.left = `${targetBallCenterX}px`;
+            ball.style.transform = `translateX(-50%) scale(1.05)`; // Keep drag feedback
+
+            // --- Update Aim Arrow ---
+            updateAimArrow(targetBallCenterX - (LANE_WIDTH / 2), deltaY); // Pass offset from center lane & vertical drag
+        });
+
+         document.addEventListener('pointerup', (e) => {
+             if (!isDragging || !interactionAllowed) return;
+
+             ball.releasePointerCapture(e.pointerId); // Release capture
+             isDragging = false;
+             interactionAllowed = false; // Disable interaction until roll ends
+             ball.classList.remove('dragging');
+             aimArrow.style.display = 'none';
+
+             const currentX = e.clientX;
+             const currentY = e.clientY;
+             let deltaX = currentX - dragStartX;
+             let deltaY = dragStartY - currentY; // Positive Y is dragging UP
+
+             // Calculate Final Angle & Power
+             // Angle (0 degrees is straight up)
+             let angleRad = Math.atan2(deltaX, deltaY); // Note: atan2(x, y) gives angle from positive Y axis
+             let angleDeg = angleRad * (180 / Math.PI);
+
+             // Clamp angle to prevent backward throws (e.g., +/- 60 degrees from center)
+             const maxAngle = 45;
+             angleDeg = Math.max(-maxAngle, Math.min(maxAngle, angleDeg));
+
+             // Power based on vertical drag distance, clamped
+             let power = Math.min(MAX_POWER, Math.max(0, deltaY));
+             let powerFactor = Math.min(1, power / MAX_POWER); // Normalize power 0 to 1
+
+             // Get the final horizontal position of the ball's center just before release
+             let releaseX = ball.offsetLeft + ball.offsetWidth / 2;
+             let releaseXNormalized = (releaseX / LANE_WIDTH); // Position 0 to 1
+
+             // Optional: Play release sound cue
+             // playSound(dragCueSound);
+
+             rollBall(angleDeg, powerFactor, releaseXNormalized);
+         });
+
+
+        function updateAimArrow(offsetX, offsetY) {
+            // Calculate angle (degrees from vertical)
+            let angleRad = Math.atan2(offsetX, Math.max(1, offsetY)); // Avoid division by zero
+            let angleDeg = angleRad * (180 / Math.PI);
+
+             // Calculate length based on offsetY (power)
+             let length = Math.min(MAX_POWER, Math.max(0, offsetY));
+             let baseLength = 50; // px
+             let arrowLength = baseLength + length * 0.8; // Scale length with power
+
+             aimArrow.style.height = `${arrowLength}px`;
+             aimArrow.style.transform = `translateX(-50%) rotate(${angleDeg}deg)`;
+
+             // Position arrow relative to ball's current position
+             aimArrow.style.left = ball.style.left; // Match ball's horizontal center
+             aimArrow.style.bottom = `${BALL_START_BOTTOM_PERCENT + (ball.offsetHeight / gameContainer.clientHeight * 100)}%`; // Position above ball
+        }
+
+        // --- Ball Rolling & Collision ---
+        function rollBall(angleDeg, powerFactor, releaseXNormalized) {
+            playSound(ballRollSound);
+            ball.style.cursor = 'default';
+
+            // Calculate target position based on angle
+            // Convert angle to radians for Math.sin/cos
+            const angleRad = angleDeg * (Math.PI / 180);
+            const travelDistance = gameContainer.clientHeight * 0.7; // How far down the lane (adjust)
+
+            const targetX = ball.offsetLeft + travelDistance * Math.sin(angleRad);
+            const targetY = ball.offsetTop - travelDistance * Math.cos(angleRad); // Move 'up' the screen visually
+
+            // Animate the ball
+            const rollDuration = 1.5 - (powerFactor * 0.7); // Faster roll with more power (seconds)
+
+            ball.style.transition = `transform ${rollDuration}s cubic-bezier(0.25, 0.1, 0.7, 1), opacity ${rollDuration}s ease-out`; // Rolling ease
+
+            // Calculate final transform: translate and scale down
+            const finalScale = 0.4; // How small the ball gets at the end
+            const finalTranslateX = targetX - (ball.offsetLeft + ball.offsetWidth / 2) + ball.offsetWidth/2; // Delta X from center start
+            const finalTranslateY = targetY - ball.offsetTop; // Delta Y
+
+            // Apply the transform to start the animation
+            ball.style.transform = `translate(${finalTranslateX}px, ${finalTranslateY}px) scale(${finalScale})`;
+            ball.style.opacity = '0.8'; // Fade slightly
+
+
+            // After animation duration, calculate pin fall
+            setTimeout(() => {
+                ballRollSound.pause(); // Stop roll sound
+                calculatePinFall(angleDeg, powerFactor, releaseXNormalized);
+            }, rollDuration * 1000); // Convert seconds to milliseconds
+        }
+
+        function calculatePinFall(angleDeg, powerFactor, hitPositionNormalized) {
+            // --- Simplified Pin Fall Logic ---
+            let pinsKnockedDownThisThrow = 0;
+            const baseHitStrength = 6; // Base number of pins possibly affected by a decent hit
+            const powerBonus = 5 * powerFactor; // More power = higher potential
+            const positionSpread = 0.15; // How much area a center hit covers (0-1 range)
+
+            pins.forEach((pin, index) => {
+                if (!pinsStanding[index]) return; // Skip already fallen pins
+
+                // --- Determine Hit Chance for this Pin ---
+                let hitChance = 0;
+                const pinPosition = getPinRelativePosition(index); // Get pin's normalized X pos (0-1)
+
+                // 1. Proximity Bonus: Higher chance if ball's path is close to pin
+                const distance = Math.abs(hitPositionNormalized - pinPosition.x);
+                if (distance < positionSpread) { // Direct hit zone
+                    hitChance += (1 - distance / positionSpread) * 0.7; // Max 0.7 chance from direct hit
+                }
+
+                // 2. Power Bonus: Higher power increases overall chance slightly
+                hitChance += powerFactor * 0.2; // Max 0.2 chance from power
+
+                // 3. Angle Bonus/Penalty (Subtle): Hitting at an angle might scatter more/less
+                const angleFactor = 1 - Math.abs(angleDeg) / 90; // 1 for straight, 0.5 for 45deg
+                hitChance += angleFactor * 0.1; // Max 0.1 bonus for straight shots
+
+                // 4. Base Randomness
+                hitChance += Math.random() * 0.3; // Add some unpredictability
+
+                // 5. Check against total potential pins to fall based on strength
+                const maxPotentialPins = Math.min(10, Math.floor(baseHitStrength + powerBonus + Math.random() * 3));
+
+                // --- Decide if Pin Falls ---
+                // Pin falls if its individual hit chance is high enough AND
+                // we haven't exceeded the max potential pins for this throw's strength
+                if (pinsKnockedDownThisThrow < maxPotentialPins && Math.random() < hitChance) {
+                    pinsStanding[index] = false;
+                    pin.classList.add('fallen');
+                    pinsKnockedDownThisThrow++;
+                }
+            });
+
+            // Play sound effect after a short delay for visual sync
+            setTimeout(() => {
+                if (pinsKnockedDownThisThrow > 0) {
+                    playSound(pinsCrashSound);
+                }
+                // Wait for pin fall animation before proceeding
+                setTimeout(() => {
+                    updateGameAfterThrow(pinsKnockedDownThisThrow);
+                }, 500); // Wait for pin fall animation (matches CSS transition)
+            }, 100);
+        }
+
+        function getPinRelativePosition(index) {
+            // Estimate pin's horizontal position relative to the lane width (0 to 1)
+            // These need to roughly match the CSS layout percentages
+             const positions = [
+                // Back row (6, 7, 8, 9)
+                 0.2, 0.4, 0.6, 0.8,
+                // Third row (3, 4, 5)
+                 0.3, 0.5, 0.7,
+                // Second row (1, 2)
+                 0.4, 0.6,
+                // Front pin (0)
+                 0.5
+             ];
+             // Pin IDs are 0-9, map them to the visual layout order if necessary
+             // Assuming index 0 = front pin, 1,2 = second row etc. up to 6,7,8,9 back row
+             // Let's adjust the mapping based on ID:
+             const idToLayoutMap = [9, 7, 8, 4, 5, 6, 0, 1, 2, 3]; // pin-0 maps to index 6 (front) etc.
+             // Let's use a simpler mapping based on visual layout: 0=front, 1,2=row2, 3,4,5=row3, 6,7,8,9=row4
+             // This requires the array `positions` to be ordered matching the expected visual layout if we iterate 0-9
+             const layoutPositions = [
+                 // pin-0 (Front)
+                 { x: 0.5, y: 0.75 },
+                 // pin-1, pin-2 (Row 2)
+                 { x: 0.4, y: 0.5 }, { x: 0.6, y: 0.5 },
+                 // pin-3, pin-4, pin-5 (Row 3)
+                 { x: 0.3, y: 0.25 }, { x: 0.5, y: 0.25 }, { x: 0.7, y: 0.25 },
+                 // pin-6, pin-7, pin-8, pin-9 (Back Row)
+                 { x: 0.2, y: 0 }, { x: 0.4, y: 0 }, { x: 0.6, y: 0 }, { x: 0.8, y: 0 }
+             ];
+
+             if (index >= 0 && index < layoutPositions.length) {
+                // Return the pre-calculated relative position
+                // We only really need X for the simple collision logic
+                return { x: layoutPositions[index].x };
+            }
+            return { x: 0.5 }; // Default to center if index is out of bounds
+        }
+
+
+        // --- Scoring and Game Flow ---
+        function updateGameAfterThrow(pinsKnockedDown) {
+            const frameIndex = currentFrame - 1;
+
+            // Store result for this throw
+             frameScores[frameIndex][currentThrow - 1] = pinsKnockedDown;
+
+             // --- Check for Special Events (Strike/Spare) ---
+             let isStrike = (currentThrow === 1 && pinsKnockedDown === 10);
+             let pinsInFrame = frameScores[frameIndex][0] + (frameScores[frameIndex][1] ?? 0);
+             let isSpare = (currentThrow === 2 && pinsInFrame === 10);
+
+             // Handle 10th frame edge cases later
+
+             if (isStrike) {
+                 frameBonus[frameIndex] = 2; // Mark as Strike
+                 showMessage("STRIKE!", 1500);
+                 playSound(strikeSound);
+                 triggerPandaCheer();
+                 jsConfetti.addConfetti({ emojis: ['🎳', '🌟', '🎉'] });
+                 applyVisualEffect('strike');
+                 // Don't proceed to throw 2, end the frame
+                 calculateTotalScore(); // Recalculate score with potential new bonuses
+                 updateScoreDisplay();
+                 setTimeout(nextTurn, 1800); // Delay before starting next frame
+             } else if (isSpare) {
+                 frameBonus[frameIndex] = 1; // Mark as Spare
+                 showMessage("Spare!", 1500);
+                 playSound(spareSound);
+                 triggerPandaCheer();
+                 jsConfetti.addConfetti({ emojis: ['🎳', '✨'] });
+                 applyVisualEffect('spare');
+                 calculateTotalScore();
+                 updateScoreDisplay();
+                 setTimeout(nextTurn, 1800);
+             } else {
+                 // Regular throw
+                 calculateTotalScore();
+                 updateScoreDisplay();
+
+                 if (currentThrow === 1) {
+                     // Move to Throw 2
+                     currentThrow = 2;
+                     updateScoreDisplay(); // Update display for Throw 2
+                     resetBallPosition();
+                     showMessage("Throw 2", 1500, true); // Ready for second throw
+                     interactionAllowed = true; // Allow next throw
+                 } else {
+                     // End of Frame (after Throw 2)
+                     setTimeout(nextTurn, 1000);
+                 }
+             }
+
+             // Handle 10th Frame Logic
+             if (currentFrame === MAX_FRAMES) {
+                 handleTenthFrame(isStrike, isSpare, pinsKnockedDown);
+             }
+        }
+
+        function handleTenthFrame(isStrike, isSpare, pinsKnockedDown) {
+            // Logic for the 10th frame (fill balls for strike/spare)
+            // This needs careful state management - simplified for now
+            const frameIndex = 9;
+
+            // If finished throw 1 or 2 normally, and not earned a 3rd throw
+            if (currentThrow === 2 && frameBonus[frameIndex] === 0) {
+                // End of game if no strike/spare in 10th
+                setTimeout(endGame, 1000);
+                return; // Stop normal flow
+            }
+
+            // On Strike in 10th (first throw)
+            if (currentThrow === 1 && isStrike) {
+                // Allow throw 2
+                currentThrow = 2;
+                 resetPinsVisualAndState(); // Reset pins for 2nd throw of 10th
+                 resetBallPosition();
+                 showMessage("Bonus Throw 1", 1500, true);
+                 interactionAllowed = true;
+            }
+            // On Spare in 10th (after second throw)
+            else if (currentThrow === 2 && isSpare) {
+                 // Allow throw 3
+                 currentThrow = 3; // Use '3' to signify the bonus ball
+                 resetPinsVisualAndState(); // Reset pins for 3rd throw of 10th
+                 resetBallPosition();
+                 showMessage("Bonus Throw!", 1500, true);
+                 interactionAllowed = true;
+                 // Store the score for the second throw correctly
+                 frameScores[frameIndex][1] = pinsKnockedDown;
+            }
+             // After Strike's 2nd throw in 10th
+             else if (currentThrow === 2 && frameBonus[frameIndex] === 2) {
+                 // Store the score, check if it was another strike
+                 frameScores[frameIndex][1] = pinsKnockedDown;
+                 if (pinsKnockedDown === 10) {
+                     resetPinsVisualAndState(); // Reset pins again if 2nd throw was a strike
+                 }
+                 // Allow throw 3
+                 currentThrow = 3;
+                 resetBallPosition();
+                 showMessage("Bonus Throw 2", 1500, true);
+                 interactionAllowed = true;
+             }
+             // After 3rd throw (bonus ball)
+             else if (currentThrow === 3) {
+                 // Store the score for the bonus ball
+                 // This requires extending frameScores or handling it specially
+                 // Simplified: just record it mentally for now
+                 if (frameScores[frameIndex][2] === undefined) frameScores[frameIndex].push(null); // Add space if needed
+                 frameScores[frameIndex][2] = pinsKnockedDown;
+
+                 calculateTotalScore(); // Final calculation
+                 updateScoreDisplay();
+                 setTimeout(endGame, 1000);
+             }
+        }
+
+
+        function calculateTotalScore() {
+            score = 0;
+            for (let i = 0; i < MAX_FRAMES; i++) {
+                const throw1 = frameScores[i][0];
+                const throw2 = frameScores[i][1];
+                let frameTotal = 0;
+
+                if (throw1 === null) break; // Stop calculation if frame not played
+
+                // --- Strike ---
+                if (frameBonus[i] === 2) { // Strike
+                    frameTotal = 10;
+                    // Look ahead for bonus
+                    if (i < MAX_FRAMES - 1) { // Not the 10th frame
+                        const nextThrow1 = frameScores[i + 1]?.[0];
+                        const nextThrow2 = frameScores[i + 1]?.[1];
+                        const nextNextThrow1 = frameScores[i + 2]?.[0]; // Needed if next frame is also a strike
+
+                        if (nextThrow1 !== null) {
+                             frameTotal += nextThrow1; // Add next throw
+                             if (frameBonus[i + 1] === 2 && i < MAX_FRAMES - 2) { // Next frame was also a strike (and not 9th frame)
+                                 if (nextNextThrow1 !== null) {
+                                     frameTotal += nextNextThrow1; // Need the first throw of the frame after next
+                                 } else { frameTotal = null; } // Bonus not yet complete
+                             } else if (nextThrow2 !== null) { // Next frame was not a strike, or it's the 9th frame
+                                 frameTotal += nextThrow2; // Add second throw of next frame
+                             } else { frameTotal = null; } // Bonus not yet complete
+                         } else { frameTotal = null; } // Bonus not yet complete
+                    } else { // 10th frame Strike - bonus comes from throws 2 and 3
+                        const bonusThrow2 = frameScores[i][1]; // 10th frame, 2nd throw
+                        const bonusThrow3 = frameScores[i][2]; // 10th frame, 3rd throw
+                         if (bonusThrow2 !== null) frameTotal += bonusThrow2; else { frameTotal = null; }
+                         if (bonusThrow3 !== null && frameTotal !== null) frameTotal += bonusThrow3; else if (bonusThrow2 !== null) { frameTotal = null; } // Need both bonus throws
+                    }
+                }
+                // --- Spare ---
+                else if (frameBonus[i] === 1) { // Spare
+                    frameTotal = 10;
+                     // Look ahead for bonus (first throw of next frame)
+                     if (i < MAX_FRAMES - 1) { // Not the 10th frame
+                         const nextThrow1 = frameScores[i + 1]?.[0];
+                         if (nextThrow1 !== null) {
+                             frameTotal += nextThrow1;
+                         } else { frameTotal = null; } // Bonus not yet complete
+                     } else { // 10th frame Spare - bonus comes from throw 3
+                         const bonusThrow3 = frameScores[i][2]; // 10th frame, 3rd throw
+                         if (bonusThrow3 !== null) frameTotal += bonusThrow3; else { frameTotal = null; }
+                     }
+                }
+                // --- Open Frame ---
+                else {
+                    frameTotal = throw1 + (throw2 ?? 0); // Add throw 2 if it exists
+                }
+
+                // Add to running total if frame calculation is complete
+                 if (frameTotal !== null) {
+                     score += frameTotal;
+                     totalScorePerFrame[i] = score; // Store cumulative score at end of this frame
+                 } else {
+                     totalScorePerFrame[i] = null; // Mark as incomplete
+                     // Don't add to score yet, break or continue displaying previous score?
+                     // For display, we usually show the score up to the last completed frame.
+                 }
+            }
+             // Find the last completed frame score to display
+             let displayScore = 0;
+             for(let i = totalScorePerFrame.length - 1; i >= 0; i--) {
+                 if (totalScorePerFrame[i] !== null) {
+                     displayScore = totalScorePerFrame[i];
+                     break;
+                 }
+             }
+             score = displayScore; // Update the global score variable for display
+        }
+
+        function nextTurn() {
+            if (currentFrame >= MAX_FRAMES && currentThrow > 1) { // Check if game should end (esp. after 10th frame logic)
+                 // Final calculation might be needed if 10th involved bonus throws
+                 calculateTotalScore();
+                 updateScoreDisplay();
+                 endGame();
+                 return;
+             }
+
+
+            currentFrame++;
+            currentThrow = 1;
+
+            if (currentFrame > MAX_FRAMES) {
+                endGame();
+            } else {
+                resetPinsVisualAndState();
+                resetBallPosition();
+                calculateTotalScore(); // Update score in case previous frame bonuses are now resolved
+                updateScoreDisplay();
+                showMessage(`Frame ${currentFrame}`, 1500, true); // Show Frame # and pulse ball
+                interactionAllowed = true;
+                panda.classList.add('idle-looking'); // Ensure panda looks ready
+            }
+        }
+
+        function endGame() {
+            gameOver = true;
+            interactionAllowed = false;
+            showMessage(`Game Over! Final Score: ${score}`, 5000);
+            restartButton.style.display = 'block';
+            triggerPandaCheer(true); // Big cheer
+            panda.classList.remove('idle-looking');
+            if (!isMuted) bgMusic.volume = 0.5; // Quieten music slightly
+        }
+
+        restartButton.addEventListener('click', () => {
+             if (!isMuted) {
+                 bgMusic.volume = 1.0; // Restore volume
+             }
+             initGame();
+        });
+
+
+        // --- Visual & State Resets ---
+        function resetPinsVisualAndState() {
+            pinsStanding.fill(true);
+            pins.forEach(pin => {
+                pin.classList.remove('fallen');
+                // Reset inline transform styles if needed (safer)
+                pin.style.transform = '';
+                pin.style.opacity = '';
+            });
+        }
+
+        function resetBallPosition() {
+            // Reset visual position and state
+            ball.style.transition = 'transform 0.3s ease-out, opacity 0.3s ease-out'; // Smooth reset transition
+            ball.style.transform = 'translateX(-50%) scale(1)'; // Center horizontally, normal scale
+            ball.style.left = '50%';
+            ball.style.bottom = `${BALL_START_BOTTOM_PERCENT}%`;
+            ball.style.opacity = '1';
+            ball.style.cursor = 'grab';
+
+            // After transition, remove inline style so CSS class takes over if needed
+            setTimeout(() => {
+                 ball.style.transition = 'transform 0.1s ease-out, box-shadow 0.2s ease'; // Restore drag transition
+            }, 300);
+        }
+
+        function updateScoreDisplay() {
+             let throwText = `Throw: ${currentThrow}`;
+             if (currentFrame === MAX_FRAMES && currentThrow > 2) {
+                throwText = "Bonus"; // For 10th frame 3rd throw
+             }
+             scoreDisplay.textContent = `Frame: ${Math.min(currentFrame, MAX_FRAMES)} / ${MAX_FRAMES} | ${throwText} | Score: ${score}`;
+        }
+
+        function showMessage(text, duration = 1500, pulseBall = false) {
+            messageOverlay.textContent = text;
+            messageOverlay.style.display = 'block';
+
+             if (pulseBall) {
+                 ball.classList.add('pulsing');
+             } else {
+                 ball.classList.remove('pulsing');
+             }
+
+            // Fade out message after duration
+            setTimeout(() => {
+                messageOverlay.style.display = 'none';
+            }, duration);
+        }
+
+        function triggerPandaCheer(bigCheer = false) {
+            panda.classList.remove('idle-looking');
+            panda.classList.add('cheer');
+            playSound(pandaCheerSound);
+            // Remove class after animation ends to allow re-triggering
+            setTimeout(() => {
+                panda.classList.remove('cheer');
+                 if (!gameOver && interactionAllowed) { // Go back to idle if game is ongoing
+                     panda.classList.add('idle-looking');
+                 }
+            }, 800); // Match animation duration
+        }
+
+        function applyVisualEffect(type) {
+            lane.classList.remove('strike-flash', 'spare-sparkle'); // Clear previous
+            void lane.offsetWidth; // Trigger reflow to restart animation if needed
+
+            if (type === 'strike') {
+                lane.classList.add('strike-flash');
+            } else if (type === 'spare') {
+                 lane.classList.add('spare-sparkle');
+            }
+
+            // Remove class after a short duration
+             setTimeout(() => {
+                 lane.classList.remove('strike-flash', 'spare-sparkle');
+             }, 500); // Duration of the flash/sparkle effect
+        }
+
+        // --- Initial Game Start ---
+        // Use setTimeout to ensure layout is stable before calculating positions
+        setTimeout(initGame, 100);
+
+    </script>
+</body>
+</html>
